@@ -9,8 +9,10 @@ app.use(cookieParser());
 app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 
 import authUserRoute from "./routes/profile.user.routes.js";
+import problemExecuteRoute from "./routes/problem.execute.routes.js";
 
 app.use("/api/auth", authUserRoute);
+app.use("/api/problem", problemExecuteRoute);
 
 connection();
 
