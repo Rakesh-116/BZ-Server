@@ -9,6 +9,7 @@ const userAuthentication = async (req, res, next) => {
   }
 
   const jwtToken = authHeader.split(" ")[1];
+  // console.log(jwtToken);
 
   jwt.verify(jwtToken, process.env.JWT_SECRET_KEY, (error, payload) => {
     if (error) {

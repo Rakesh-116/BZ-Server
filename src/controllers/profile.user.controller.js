@@ -38,10 +38,13 @@ const createUser = async (req, res) => {
       { expiresIn: "4h" }
     );
 
+    // console.log(user.rows[0]);
+
     res.status(201).json({
       success: true,
       message: "User registered successfully",
       token,
+      user: user.rows[0],
     });
   } catch (error) {
     return res.status(500).json({
@@ -83,10 +86,14 @@ const loginUser = async (req, res) => {
         process.env.JWT_SECRET_KEY,
         { expiresIn: "4h" }
       );
+
+      // console.log(userCheck.rows[0]);
+
       res.status(200).json({
         success: true,
         message: "User logged in successfully",
         token,
+        user: userCheck.rows[0],
       });
     } else {
       return res.status(401).json({
