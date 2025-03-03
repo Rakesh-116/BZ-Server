@@ -8,11 +8,13 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 
-import authUserRoute from "./routes/profile.user.routes.js";
+import userRoute from "./routes/profile.user.routes.js";
 import problemExecuteRoute from "./routes/problem.execute.routes.js";
+import snippetsRoute from "./routes/snippets.routes.js";
 
-app.use("/api/auth", authUserRoute);
+app.use("/api/user", userRoute);
 app.use("/api/problem", problemExecuteRoute);
+app.use("/api/snippets", snippetsRoute);
 
 connection();
 

@@ -5,10 +5,10 @@ FROM openjdk:17
 WORKDIR /app
 
 # Copy only necessary files
-COPY NeoCode.java /app
+# COPY NeoCode.java /app
 
-# Compile the Java file
-RUN javac NeoCode.java
+# # Compile the Java file
+# RUN javac NeoCode.java
 
-# Specify the command to run the Java application
-CMD ["java", "NeoCode"]
+# # Specify the command to run the Java application
+# CMD ["java", "NeoCode"]

@@ -2,12 +2,17 @@ import { Router } from "express";
 import {
   createUser,
   loginUser,
+  fetchUser,
 } from "../controllers/profile.user.controller.js";
 
-const authUserRoute = Router();
+import { userAuthentication } from "../middlewares/authentication.js";
 
-authUserRoute.route("/register").post(createUser);
+const userRoute = Router();
 
-authUserRoute.route("/login").post(loginUser);
+userRoute.route("/auth/register").post(createUser);
 
-export default authUserRoute;
+userRoute.route("/auth/login").post(loginUser);
+
+userRoute.route("/profile").get(userAuthentication, fetchUser);
+
+export default userRoute;

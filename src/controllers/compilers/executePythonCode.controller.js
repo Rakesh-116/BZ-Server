@@ -4,20 +4,10 @@ import fs from "fs";
 import { exec } from "child_process";
 import { hrtime } from "process";
 
-// Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const CLASS_FILE_PATH = join(
-  __dirname,
-  "..",
-  "..",
-  "workers",
-  "java-worker",
-  "NeoCode.class"
-).replace(/\\/g, "/");
-
-const executeJavaCode = async (sourceCode, input, testId) => {
+const executePythonCode = async (sourceCode, input, testId) => {
   const executionId = `exec_${testId}_${Date.now()}`;
   const executionDirectory = `/sandbox/${executionId}`;
 
@@ -28,31 +18,35 @@ const executeJavaCode = async (sourceCode, input, testId) => {
         "..",
         "..",
         "workers",
-        "java-worker",
+        "python-worker",
         executionId
       );
 
-      const LOCAL_JAVA_FILE = join(LOCAL_WORKSPACE, "NeoCode.java");
-      const LOCAL_INPUT_FILE = join(LOCAL_WORKSPACE, "input.txt");
+      const PYTHON_WORKER_PATH = join(LOCAL_WORKSPACE, "NeoCode.py");
 
+      const INPUT_FILE_PATH = join(LOCAL_WORKSPACE, "input.txt");
+
+      // create local workspace for this execution
       fs.mkdirSync(LOCAL_WORKSPACE, { recursive: true });
-      fs.writeFileSync(LOCAL_JAVA_FILE, sourceCode, "utf-8");
-      fs.writeFileSync(LOCAL_INPUT_FILE, input, "utf-8");
+      fs.writeFileSync(PYTHON_WORKER_PATH, sourceCode, "utf-8");
+      fs.writeFileSync(INPUT_FILE_PATH, input, "utf-8");
 
       const startTime = hrtime();
+
       exec(
-        'docker ps -q --filter "name=java-container"',
+        'docker ps -q --filter "name=python-container"',
         (psError, psStdout) => {
           if (psError) {
-            console.error("Docker ps error: ", psError);
+            console.error("Docker ps error:", psError);
             return reject({
               success: false,
               message: "Failed to check Docker container",
             });
           }
 
+          // Start container if not running
           if (!psStdout) {
-            exec("docker start java-container", (startError) => {
+            exec("docker start python-container", (startError) => {
               if (startError) {
                 console.error("Container start error:", startError);
                 return reject({
@@ -63,8 +57,9 @@ const executeJavaCode = async (sourceCode, input, testId) => {
             });
           }
 
+          // Create an isolated workspace inside the container and copy files
           exec(
-            `docker exec java-container mkdir -p ${executionDirectory} && docker cp ${LOCAL_JAVA_FILE} java-container:${executionDirectory}/NeoCode.java && docker cp ${LOCAL_INPUT_FILE} java-container:${executionDirectory}/input.txt`,
+            `docker exec python-container mkdir -p ${executionDirectory} && docker cp ${PYTHON_WORKER_PATH} python-container:/${executionDirectory}/NeoCode.py && docker cp ${INPUT_FILE_PATH} python-container:/${executionDirectory}/input.txt`,
             (copyError) => {
               if (copyError) {
                 console.error("File copy error: ", copyError);
@@ -80,19 +75,17 @@ const executeJavaCode = async (sourceCode, input, testId) => {
                 });
               }
 
-              // Compile and execute inside isolated directory
+              // Compile & Execute inside Docker
               exec(
-                `docker exec -i java-container sh -c "javac ${executionDirectory}/NeoCode.java && java ${executionDirectory}/NeoCode.java < ${executionDirectory}/input.txt"`,
-                // { timeout: 5000 },
+                `docker exec -i python-container sh -c "python3 /${executionDirectory}/NeoCode.py < /${executionDirectory}/input.txt"`,
                 (error, stdout, stderr) => {
-                  const endTime = process.hrtime(startTime);
-                  // console.log(endTime);
+                  const endTime = hrtime(startTime);
                   const executionTime = `${
                     (endTime[0] * 1e9 + endTime[1]) / 1e6
                   } ms`;
 
                   if (error) {
-                    console.error("Execution error:", error);
+                    console.error("Execution error: ", error);
 
                     fs.rmSync(LOCAL_WORKSPACE, {
                       recursive: true,
@@ -101,15 +94,14 @@ const executeJavaCode = async (sourceCode, input, testId) => {
 
                     return reject({
                       success: false,
-                      message: "Failed to execute Java code",
+                      message: "Failed to execute python code",
                       error: stderr || error.message,
-                      executionTime,
                     });
                   }
 
                   // Cleanup after execution (both in container and locally)
                   exec(
-                    `docker exec java-container rm -rf ${executionDirectory}`,
+                    `docker exec python-container rm -rf ${executionDirectory}`,
                     () => {
                       fs.rmSync(LOCAL_WORKSPACE, {
                         recursive: true,
@@ -123,28 +115,17 @@ const executeJavaCode = async (sourceCode, input, testId) => {
                       });
                     }
                   );
-
-                  // Delete the .class file after execution
-                  // setTimeout(() => {
-                  fs.unlink(CLASS_FILE_PATH, (err) => {
-                    if (err) {
-                      console.error("Error deleting .class file:", err);
-                    } else {
-                      console.log("NeoCode.class file deleted successfully.");
-                    }
-                  });
-                  // }, 10000);
                 }
               );
             }
           );
         }
       );
-    } catch (err) {
-      console.error("File write error:", err);
+    } catch (error) {
+      console.error("File write error:", error);
       reject({ success: false, message: "Internal Server Error" });
     }
   });
 };
 
-export default executeJavaCode;
+export default executePythonCode;

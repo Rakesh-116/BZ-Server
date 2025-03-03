@@ -30,6 +30,7 @@ CREATE TABLE Problem (
   input_format TEXT NOT NULL,
   output_format TEXT NOT NULL,
   constraints VARCHAR(255),
+  prohibited_keys JSONB,
   sample_testcase JSONB,
   explaination TEXT DEFAULT 'Self Explainary',
   no_of_submissions INT DEFAULT 0,
@@ -55,17 +56,6 @@ CREATE TABLE defaultCode (
 );
 ```
 
-### Prohibited Keys Table
-
-```
-CREATE TABLE prohibitedKeys (
-  id SERIAL PRIMARY KEY,
-  problem_id INT REFERENCES Problem(id) ON DELETE CASCADE,
-  language VARCHAR(100) NOT NULL,
-  key VARCHAR(100) NOT NULL
-);
-```
-
 ### Programming Languages Table
 
 ```
@@ -82,7 +72,6 @@ CREATE TABLE testcases (
   id SERIAL PRIMARY KEY,
   testcase JSONB NOT NULL, -- Stores input-output pairs in JSON format
   problem_id INT REFERENCES Problem(id) ON DELETE CASCADE,
-  status submission_status NOT NULL -- ENUM type for status
 );
 ```
 
@@ -94,8 +83,25 @@ CREATE TABLE submissions (
   problem_id INT REFERENCES Problem(id) ON DELETE CASCADE,
   user_id UUID REFERENCES Users(id) ON DELETE CASCADE,
   code TEXT NOT NULL,
-  language INT REFERENCES language(id) ON DELETE CASCADE,
-  status submission_status NOT NULL, -- ENUM type for status
+  language VARCHAR(100) NOT NULL,
+  test_results JSONB NOT NULL,
+  verdict submission_status NOT NULL,
   submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+```
+
+ALTER TABLE submissions
+ADD column execution_time varchar(255) NOT NULL
+
+### Saved Snippets Table
+
+```
+CREATE TABLE savedSnippets(
+  id SERIAL UUID,
+  user_id UUID REFERENCES Users(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  explanation TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
 ```

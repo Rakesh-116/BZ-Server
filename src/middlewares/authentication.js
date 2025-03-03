@@ -23,7 +23,7 @@ const userAuthentication = async (req, res, next) => {
 
     // console.log(payload);
     req.userId = payload.userId;
-    next();
+    return next();
   });
 };
 

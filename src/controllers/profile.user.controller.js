@@ -109,4 +109,16 @@ const loginUser = async (req, res) => {
   }
 };
 
-export { createUser, loginUser };
+const fetchUser = async (req, res) => {
+  const userId = req.userId;
+  const userDetailsQuery =
+    "SELECT id, username, email, role FROM users WHERE id = $1";
+  try {
+    const userDetails = await pool.query(userDetailsQuery, [userId]);
+    return res.status(200).json({ success: true, user: userDetails.rows[0] });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Database error" });
+  }
+};
+
+export { createUser, loginUser, fetchUser };

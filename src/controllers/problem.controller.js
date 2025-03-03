@@ -1,4 +1,5 @@
 import { pool } from "../database/connect.db.js";
+import generateUuid from "../constants/generateUuid.js";
 
 const createProblemController = async (req, res) => {
   const {
@@ -12,11 +13,15 @@ const createProblemController = async (req, res) => {
     explaination,
     difficulty,
     score,
+    hidden_testcases,
+    category,
+    solution,
+    solutionLanguage,
   } = req.body;
   const userId = req.userId;
   // console.log(req.body, userId);
 
-  const createProblemQuery = `INSERT INTO Problem (title, description, input_format, output_format, constraints, prohibited_keys, sample_testcase, explaination, difficulty,score, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`;
+  const createProblemQuery = `INSERT INTO Problem (title, description, input_format, output_format, constraints, prohibited_keys, sample_testcase, explaination, difficulty,score, category, solution, solution_language, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`;
 
   const createProblemProps = [
     title,
@@ -29,14 +34,32 @@ const createProblemController = async (req, res) => {
     explaination || "Self Explainary!",
     difficulty,
     score,
+    category || null,
+    solution || "No Solution",
+    solutionLanguage || null,
     userId,
   ];
 
   try {
-    const result = await pool.query(createProblemQuery, createProblemProps);
+    const createProblemResult = await pool.query(
+      createProblemQuery,
+      createProblemProps
+    );
 
-    if (result.rowCount > 0) {
-      // console.log(result);
+    if (createProblemResult.rowCount > 0) {
+      console.log(createProblemResult);
+      const problemId = createProblemResult.rows[0].id;
+
+      const insertHiddenTestcasesQuery = `INSERT INTO testcases (id, testcase, problem_id) VALUES ($1, $2, $3)`;
+
+      for (const test of hidden_testcases) {
+        await pool.query(insertHiddenTestcasesQuery, [
+          generateUuid(),
+          test,
+          problemId,
+        ]);
+      }
+
       return res.status(200).json({
         success: true,
         message: "Problem created successfully",
@@ -107,8 +130,45 @@ const getProblemDetailsController = async (req, res) => {
   }
 };
 
+const getAllProblemSubmissionsController = async (req, res) => {
+  const problemId = req.params.id;
+  const userId = req.userId;
+
+  const getAllSubmissionsQuery = `
+    SELECT * FROM submissions WHERE problem_id = $1 and user_id = $2
+    ORDER BY submission_time DESC
+  `;
+
+  const getAllProblemsProps = [problemId, userId];
+
+  try {
+    const result = await pool.query(
+      getAllSubmissionsQuery,
+      getAllProblemsProps
+    );
+    if (result.rowCount > 0) {
+      return res.status(200).json({
+        success: true,
+        submissionDetails: result.rows,
+      });
+    } else {
+      return res.status(200).json({
+        success: true,
+        message: "No Submissions",
+        submissionDetails: [],
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Please try again later.",
+    });
+  }
+};
+
 export {
   createProblemController,
   getAllProblemsController,
   getProblemDetailsController,
+  getAllProblemSubmissionsController,
 };
