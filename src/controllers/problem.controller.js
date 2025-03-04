@@ -130,6 +130,42 @@ const getProblemDetailsController = async (req, res) => {
   }
 };
 
+const getAllSubmissionsController = async (req, res) => {
+  const { limit, skip } = req.query;
+
+  const parsedLimit = parseInt(limit, 10) || 10;
+  const parsedSkip = parseInt(skip, 10) || 0;
+
+  const getAllSubmissionsQuery = `
+    SELECT s.*, p.title AS problem_title
+    FROM submissions s
+    JOIN problem p ON s.problem_id = p.id
+    ORDER BY s.submission_time DESC
+    LIMIT $1 OFFSET $2
+  `;
+
+  const getTotalSubmissionsQuery = `SELECT COUNT(*) FROM submissions`;
+
+  try {
+    const [submissionsResult, totalCountResult] = await Promise.all([
+      pool.query(getAllSubmissionsQuery, [parsedLimit, parsedSkip]),
+      pool.query(getTotalSubmissionsQuery),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      submissions: submissionsResult.rows,
+      totalSubmissions: parseInt(totalCountResult.rows[0].count, 10),
+    });
+  } catch (error) {
+    console.error("Error fetching submissions:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Please try again later.",
+    });
+  }
+};
+
 const getAllProblemSubmissionsController = async (req, res) => {
   const problemId = req.params.id;
   const userId = req.userId;
@@ -170,5 +206,6 @@ export {
   createProblemController,
   getAllProblemsController,
   getProblemDetailsController,
+  getAllSubmissionsController,
   getAllProblemSubmissionsController,
 };
