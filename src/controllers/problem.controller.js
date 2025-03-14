@@ -131,6 +131,7 @@ const getProblemDetailsController = async (req, res) => {
 };
 
 const getAllSubmissionsController = async (req, res) => {
+  const userId = req.userId;
   const { limit, skip } = req.query;
 
   const parsedLimit = parseInt(limit, 10) || 10;
@@ -140,16 +141,17 @@ const getAllSubmissionsController = async (req, res) => {
     SELECT s.*, p.title AS problem_title
     FROM submissions s
     JOIN problem p ON s.problem_id = p.id
+    WHERE user_id = $1
     ORDER BY s.submission_time DESC
-    LIMIT $1 OFFSET $2
+    LIMIT $2 OFFSET $3
   `;
 
-  const getTotalSubmissionsQuery = `SELECT COUNT(*) FROM submissions`;
+  const getTotalSubmissionsQuery = `SELECT COUNT(*) FROM submissions WHERE user_id = $1`;
 
   try {
     const [submissionsResult, totalCountResult] = await Promise.all([
-      pool.query(getAllSubmissionsQuery, [parsedLimit, parsedSkip]),
-      pool.query(getTotalSubmissionsQuery),
+      pool.query(getAllSubmissionsQuery, [userId, parsedLimit, parsedSkip]),
+      pool.query(getTotalSubmissionsQuery, [userId]),
     ]);
 
     return res.status(200).json({
