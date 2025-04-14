@@ -47,6 +47,7 @@ const createUser = async (req, res) => {
       user: user.rows[0],
     });
   } catch (error) {
+    console.log(error);
     return res.status(500).json({
       success: false,
       message: "Database error",

@@ -4,7 +4,6 @@ import fs from "fs";
 import { exec } from "child_process";
 import { hrtime } from "process";
 
-// Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -16,6 +15,16 @@ const CLASS_FILE_PATH = join(
   "java-worker",
   "NeoCode.class"
 ).replace(/\\/g, "/");
+
+// 💡 Sanitize risky Java code
+const sanitizeJavaCode = (code) => {
+  return code
+    .replace(/System\.exit\s*\(\s*\d*\s*\)/g, "// blocked System.exit")
+    .replace(/Runtime\.getRuntime\s*\(\)/g, "// blocked Runtime")
+    .replace(/import\s+java\.io\..*;/g, "// blocked java.io import")
+    .replace(/import\s+java\.net\..*;/g, "// blocked java.net import")
+    .replace(/import\s+java\.lang\.reflect\..*;/g, "// blocked reflection");
+};
 
 const executeJavaCode = async (sourceCode, input, testId) => {
   const executionId = `exec_${testId}_${Date.now()}`;
@@ -36,28 +45,31 @@ const executeJavaCode = async (sourceCode, input, testId) => {
       const LOCAL_INPUT_FILE = join(LOCAL_WORKSPACE, "input.txt");
 
       fs.mkdirSync(LOCAL_WORKSPACE, { recursive: true });
-      fs.writeFileSync(LOCAL_JAVA_FILE, sourceCode, "utf-8");
+
+      // 🧼 Sanitize user code
+      const safeCode = sanitizeJavaCode(sourceCode);
+
+      fs.writeFileSync(LOCAL_JAVA_FILE, safeCode, "utf-8");
       fs.writeFileSync(LOCAL_INPUT_FILE, input, "utf-8");
 
       const startTime = hrtime();
+
       exec(
         'docker ps -q --filter "name=java-container"',
         (psError, psStdout) => {
           if (psError) {
-            console.error("Docker ps error: ", psError);
             return reject({
               success: false,
-              message: "Failed to check Docker container",
+              message: `Failed to check Docker container: ${psError}`,
             });
           }
 
           if (!psStdout) {
             exec("docker start java-container", (startError) => {
               if (startError) {
-                console.error("Container start error:", startError);
                 return reject({
                   success: false,
-                  message: "Failed to start Docker container",
+                  message: `Failed to start Docker container: ${startError}`,
                 });
               }
             });
@@ -67,73 +79,73 @@ const executeJavaCode = async (sourceCode, input, testId) => {
             `docker exec java-container mkdir -p ${executionDirectory} && docker cp ${LOCAL_JAVA_FILE} java-container:${executionDirectory}/NeoCode.java && docker cp ${LOCAL_INPUT_FILE} java-container:${executionDirectory}/input.txt`,
             (copyError) => {
               if (copyError) {
-                console.error("File copy error: ", copyError);
-
-                fs.rmSync(LOCAL_WORKSPACE, {
-                  recursive: true,
-                  force: true,
-                });
-
+                fs.rmSync(LOCAL_WORKSPACE, { recursive: true, force: true });
                 return reject({
                   success: false,
-                  message: "Failed to copy files to container",
+                  message: `Failed to copy files to container: ${copyError}`,
                 });
               }
 
-              // Compile and execute inside isolated directory
+              // Compile + Run with timeout
               exec(
-                `docker exec -i java-container sh -c "javac ${executionDirectory}/NeoCode.java && java ${executionDirectory}/NeoCode.java < ${executionDirectory}/input.txt"`,
-                // { timeout: 5000 },
+                `docker exec -i java-container sh -c "javac ${executionDirectory}/NeoCode.java && timeout 3 java -cp ${executionDirectory} NeoCode < ${executionDirectory}/input.txt"`,
+                { timeout: 4000 },
                 (error, stdout, stderr) => {
-                  const endTime = process.hrtime(startTime);
-                  // console.log(endTime);
+                  const endTime = hrtime(startTime);
                   const executionTime = `${
                     (endTime[0] * 1e9 + endTime[1]) / 1e6
                   } ms`;
 
+                  const cleanUp = () => {
+                    exec(
+                      `docker exec java-container rm -rf ${executionDirectory}`,
+                      () => {
+                        fs.rmSync(LOCAL_WORKSPACE, {
+                          recursive: true,
+                          force: true,
+                        });
+                        fs.unlink(CLASS_FILE_PATH, (err) => {
+                          if (!err) {
+                            console.log("NeoCode.class deleted");
+                          }
+                        });
+                      }
+                    );
+                  };
+
                   if (error) {
-                    console.error("Execution error:", error);
+                    cleanUp();
 
-                    fs.rmSync(LOCAL_WORKSPACE, {
-                      recursive: true,
-                      force: true,
-                    });
+                    // ⏱️ TLE Check
+                    if (
+                      error.killed ||
+                      error.signal === "SIGTERM" ||
+                      stderr.includes("timed out")
+                    ) {
+                      return resolve({
+                        success: false,
+                        message: "Time Limit Exceeded",
+                        error: "Time Limit Exceeded",
+                        executionTime,
+                      });
+                    }
 
-                    return reject({
+                    // 💥 Runtime Error
+                    return resolve({
                       success: false,
-                      message: "Failed to execute Java code",
+                      message: "Runtime Error",
                       error: stderr || error.message,
                       executionTime,
                     });
                   }
 
-                  // Cleanup after execution (both in container and locally)
-                  exec(
-                    `docker exec java-container rm -rf ${executionDirectory}`,
-                    () => {
-                      fs.rmSync(LOCAL_WORKSPACE, {
-                        recursive: true,
-                        force: true,
-                      });
+                  cleanUp();
 
-                      resolve({
-                        success: true,
-                        output: stdout.trimEnd(),
-                        executionTime,
-                      });
-                    }
-                  );
-
-                  // Delete the .class file after execution
-                  // setTimeout(() => {
-                  fs.unlink(CLASS_FILE_PATH, (err) => {
-                    if (err) {
-                      console.error("Error deleting .class file:", err);
-                    } else {
-                      console.log("NeoCode.class file deleted successfully.");
-                    }
+                  return resolve({
+                    success: true,
+                    output: stdout.trimEnd(),
+                    executionTime,
                   });
-                  // }, 10000);
                 }
               );
             }
@@ -141,8 +153,7 @@ const executeJavaCode = async (sourceCode, input, testId) => {
         }
       );
     } catch (err) {
-      console.error("File write error:", err);
-      reject({ success: false, message: "Internal Server Error" });
+      return reject({ success: false, message: "Internal Server Error" });
     }
   });
 };

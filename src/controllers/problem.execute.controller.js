@@ -21,7 +21,9 @@ const executeProblemController = async (req, res) => {
         `sample_${userId}`
       );
       console.log(result.output);
-      return res.json(result);
+      return result.success
+        ? res.status(200).json(result)
+        : res.status(402).json(result);
     } else if (
       typeof language === "string" &&
       language.toLowerCase() === "python"
@@ -32,7 +34,9 @@ const executeProblemController = async (req, res) => {
         `sample_${userId}`
       );
       console.log(result);
-      return res.json(result);
+      return result.success
+        ? res.status(200).json(result)
+        : res.status(402).json(result);
     } else if (
       typeof language === "string" &&
       language.toLowerCase() === "cpp"
@@ -43,7 +47,9 @@ const executeProblemController = async (req, res) => {
         `sample_${userId}`
       );
       console.log(result);
-      return res.json(result);
+      return result.success
+        ? res.status(200).json(result)
+        : res.status(402).json(result);
     } else {
       return res
         .status(400)
@@ -111,26 +117,43 @@ const submitProblemController = async (req, res) => {
           // console.log("-------");
           // console.log(test.testcase.output);
           // console.log(test.testcase.output === result.output);
-          if (result.output.trimEnd() === test.testcase.output.trimEnd()) {
+
+          if (result.error) {
+            if (result.error.toLowerCase().includes("time limit")) {
+              verdict = "TLE";
+            } else {
+              verdict = "RTE";
+            }
+          } else if (
+            result.output.trimEnd() === test.testcase.output.trimEnd()
+          ) {
             verdict = "ACCEPTED";
           } else {
             verdict = "WRONG ANSWER";
           }
+
           testResults.push({ ...result, verdict });
         }
         // console.log("tr:", testResults);
 
-        let verdict = "";
+        let verdict = "ACCEPTED";
         let totalExecutionTime = 0;
 
         for (let test of testResults) {
+          totalExecutionTime += test.executionTime;
+
+          if (test.verdict === "TLE") {
+            verdict = "TLE";
+            break;
+          }
+          if (test.verdict === "RTE") {
+            verdict = "RTE";
+            break;
+          }
           if (test.verdict === "WRONG ANSWER") {
             verdict = "WRONG ANSWER";
             break;
-          } else {
-            verdict = "ACCEPTED";
           }
-          totalExecutionTime += test.executionTime;
         }
 
         const insertProblemSubmissionQuery =
@@ -158,10 +181,24 @@ const submitProblemController = async (req, res) => {
 
         console.log(insertHiddenTestcasesResult.rows);
 
-        return res.status(200).json({
-          success: true,
-          insertHiddenTestcasesResult,
-        });
+        const totalTestcases = testResults.length;
+        const passedTestcases = testResults.filter(
+          (t) => t.verdict === "ACCEPTED"
+        ).length;
+
+        const responsePayload = {
+          success: verdict === "ACCEPTED",
+          verdict: verdict,
+          totalTestcases,
+          passedTestcases,
+          totalExecutionTime,
+          testResults, // Array of detailed results
+          submissionDetails: insertHiddenTestcasesResult.rows[0], // You can still send this
+        };
+
+        return res
+          .status(verdict === "ACCEPTED" ? 200 : 402)
+          .json(responsePayload);
       }
 
       // if (typeof language === "string" && language.toLowerCase() === "java") {

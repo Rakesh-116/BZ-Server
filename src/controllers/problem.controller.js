@@ -80,12 +80,40 @@ const createProblemController = async (req, res) => {
 };
 
 const getAllProblemsController = async (req, res) => {
-  const getAllProblemsQuery =
-    "SELECT id, title, score, difficulty FROM Problem";
+  const { categories, difficulty, search } = req.query;
+
+  const categoryList = categories ? categories.split(",") : [];
+
+  let baseQuery = "SELECT id, title, score, difficulty, category FROM Problem";
+  const conditions = [];
+  const values = [];
+
+  if (categoryList.length > 0) {
+    const categoryPlaceholders = categoryList
+      .map((_, idx) => `$${values.length + idx + 1}`)
+      .join(", ");
+    conditions.push(`category IN (${categoryPlaceholders})`);
+    values.push(...categoryList);
+  }
+
+  if (difficulty) {
+    values.push(difficulty.toLowerCase());
+    conditions.push(`LOWER(difficulty::text) = $${values.length}`);
+  }
+
+  if (search) {
+    values.push(`%${search.toLowerCase()}%`);
+    conditions.push(`LOWER(title) LIKE $${values.length}`);
+  }
+
+  const whereClause =
+    conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")} ` : " ";
+  const orderClause = " ORDER BY id ASC";
+  const finalQuery = baseQuery + whereClause + orderClause;
+
   try {
-    const result = await pool.query(getAllProblemsQuery);
+    const result = await pool.query(finalQuery, values);
     if (result.rowCount > 0) {
-      // console.log(result);
       return res.status(200).json({
         success: true,
         problems: result.rows,
@@ -154,9 +182,23 @@ const getAllSubmissionsController = async (req, res) => {
       pool.query(getTotalSubmissionsQuery, [userId]),
     ]);
 
+    const submissionsWithStats = submissionsResult.rows.map((submission) => {
+      const testResults = submission.test_results || [];
+      const totalTestcases = testResults.length;
+      const passedTestcases = testResults.filter(
+        (t) => t.success === true
+      ).length;
+
+      return {
+        ...submission,
+        totalTestcases,
+        passedTestcases,
+      };
+    });
+
     return res.status(200).json({
       success: true,
-      submissions: submissionsResult.rows,
+      submissions: submissionsWithStats,
       totalSubmissions: parseInt(totalCountResult.rows[0].count, 10),
     });
   } catch (error) {
