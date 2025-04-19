@@ -18,10 +18,23 @@ const createProblemController = async (req, res) => {
     solution,
     solutionLanguage,
   } = req.body;
-  const userId = req.userId;
-  // console.log(req.body, userId);
 
-  const createProblemQuery = `INSERT INTO Problem (title, description, input_format, output_format, constraints, prohibited_keys, sample_testcase, explaination, difficulty,score, category, solution, solution_language, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`;
+  const userId = req.userId;
+
+  const createProblemQuery = `
+    INSERT INTO Problem (
+      title, description, input_format, output_format,
+      constraints, prohibited_keys, sample_testcase,
+      explaination, difficulty, score, category,
+      solution, solution_language, created_by
+    )
+    VALUES (
+      $1, $2, $3, $4,
+      $5, $6, $7,
+      $8, $9, $10, $11,
+      $12, $13, $14
+    ) RETURNING id
+  `;
 
   const createProblemProps = [
     title,
@@ -34,7 +47,7 @@ const createProblemController = async (req, res) => {
     explaination || "Self Explainary!",
     difficulty,
     score,
-    category || null,
+    category || [],
     solution || "No Solution",
     solutionLanguage || null,
     userId,
@@ -47,10 +60,12 @@ const createProblemController = async (req, res) => {
     );
 
     if (createProblemResult.rowCount > 0) {
-      console.log(createProblemResult);
       const problemId = createProblemResult.rows[0].id;
 
-      const insertHiddenTestcasesQuery = `INSERT INTO testcases (id, testcase, problem_id) VALUES ($1, $2, $3)`;
+      const insertHiddenTestcasesQuery = `
+        INSERT INTO testcases (id, testcase, problem_id)
+        VALUES ($1, $2, $3)
+      `;
 
       for (const test of hidden_testcases) {
         await pool.query(insertHiddenTestcasesQuery, [
@@ -83,17 +98,16 @@ const getAllProblemsController = async (req, res) => {
   const { categories, difficulty, search } = req.query;
 
   const categoryList = categories ? categories.split(",") : [];
-
-  let baseQuery = "SELECT id, title, score, difficulty, category FROM Problem";
+  let baseQuery = `
+    SELECT id, title, score, difficulty, category
+    FROM Problem
+  `;
   const conditions = [];
   const values = [];
 
   if (categoryList.length > 0) {
-    const categoryPlaceholders = categoryList
-      .map((_, idx) => `$${values.length + idx + 1}`)
-      .join(", ");
-    conditions.push(`category IN (${categoryPlaceholders})`);
-    values.push(...categoryList);
+    values.push(categoryList);
+    conditions.push(`category @> $${values.length}::text[]`);
   }
 
   if (difficulty) {
@@ -107,23 +121,17 @@ const getAllProblemsController = async (req, res) => {
   }
 
   const whereClause =
-    conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")} ` : " ";
-  const orderClause = " ORDER BY id ASC";
-  const finalQuery = baseQuery + whereClause + orderClause;
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const orderClause = "ORDER BY id ASC";
+  const finalQuery = `${baseQuery} ${whereClause} ${orderClause}`;
 
   try {
     const result = await pool.query(finalQuery, values);
-    if (result.rowCount > 0) {
-      return res.status(200).json({
-        success: true,
-        problems: result.rows,
-      });
-    } else {
-      return res.status(404).json({
-        success: false,
-        message: "No problems found",
-      });
-    }
+    return res.status(result.rowCount > 0 ? 200 : 404).json({
+      success: result.rowCount > 0,
+      problems: result.rows,
+      message: result.rowCount > 0 ? undefined : "No problems found",
+    });
   } catch (error) {
     console.error("Error fetching problems:", error);
     return res.status(500).json({
@@ -135,20 +143,17 @@ const getAllProblemsController = async (req, res) => {
 
 const getProblemDetailsController = async (req, res) => {
   const problemId = req.params.id;
-  // console.log("prob: ", problemId);
-  const getProblemDetailsQuery = "SELECT * FROM Problem WHERE id = $1";
+
   try {
-    const result = await pool.query(getProblemDetailsQuery, [problemId]);
+    const result = await pool.query("SELECT * FROM Problem WHERE id = $1", [
+      problemId,
+    ]);
     if (result.rowCount > 0) {
-      return res.status(200).json({
-        success: true,
-        problem: result.rows[0],
-      });
+      return res.status(200).json({ success: true, problem: result.rows[0] });
     } else {
-      return res.status(404).json({
-        success: false,
-        message: "Problem not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Problem not found" });
     }
   } catch (error) {
     return res.status(500).json({
@@ -173,7 +178,6 @@ const getAllSubmissionsController = async (req, res) => {
     ORDER BY s.submission_time DESC
     LIMIT $2 OFFSET $3
   `;
-
   const getTotalSubmissionsQuery = `SELECT COUNT(*) FROM submissions WHERE user_id = $1`;
 
   try {
@@ -214,30 +218,17 @@ const getAllProblemSubmissionsController = async (req, res) => {
   const problemId = req.params.id;
   const userId = req.userId;
 
-  const getAllSubmissionsQuery = `
-    SELECT * FROM submissions WHERE problem_id = $1 and user_id = $2
-    ORDER BY submission_time DESC
-  `;
-
-  const getAllProblemsProps = [problemId, userId];
-
   try {
     const result = await pool.query(
-      getAllSubmissionsQuery,
-      getAllProblemsProps
+      `SELECT * FROM submissions WHERE problem_id = $1 AND user_id = $2 ORDER BY submission_time DESC`,
+      [problemId, userId]
     );
-    if (result.rowCount > 0) {
-      return res.status(200).json({
-        success: true,
-        submissionDetails: result.rows,
-      });
-    } else {
-      return res.status(200).json({
-        success: true,
-        message: "No Submissions",
-        submissionDetails: [],
-      });
-    }
+
+    return res.status(200).json({
+      success: true,
+      submissionDetails: result.rows,
+      message: result.rowCount > 0 ? undefined : "No Submissions",
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,

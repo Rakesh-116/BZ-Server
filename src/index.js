@@ -15,6 +15,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
 import userRoute from "./routes/profile.user.routes.js";
 import problemExecuteRoute from "./routes/problem.execute.routes.js";
 import snippetsRoute from "./routes/snippets.routes.js";
@@ -22,6 +23,8 @@ import snippetsRoute from "./routes/snippets.routes.js";
 app.use("/api/user", userRoute);
 app.use("/api/problem", problemExecuteRoute);
 app.use("/api/snippets", snippetsRoute);
+
+// app.use("/api/admin/users")
 
 connection();
 

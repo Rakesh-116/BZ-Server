@@ -26,9 +26,7 @@ problemExecuteRoute
   .route("/create")
   .post(userAuthentication, createProblemController);
 
-problemExecuteRoute
-  .route("/get-all")
-  .get(userAuthentication, getAllProblemsController);
+problemExecuteRoute.route("/get-all").get(getAllProblemsController);
 
 problemExecuteRoute
   .route("/get/:id")
